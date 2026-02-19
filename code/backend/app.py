@@ -1,9 +1,12 @@
 """
 LaTeX Resume Editor - Backend Server
-A Flask application for editing and compiling LaTeX resumes
+A Flask application for editing and compiling LaTeX resumes.
+Supports both standalone web mode and Electron desktop mode.
 """
 
 import os
+import sys
+import signal
 import subprocess
 import tempfile
 import shutil
@@ -11,8 +14,16 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 
-# Root is RESUME (parent of code/)
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+# Detect Electron desktop mode
+ELECTRON_MODE = os.environ.get('ELECTRON_MODE') == '1'
+
+# Root directory resolution:
+# - In Electron packaged mode, LATEX_EDITOR_ROOT env var is set by main.js
+# - In development, it's the parent of code/
+if os.environ.get('LATEX_EDITOR_ROOT'):
+    ROOT_DIR = Path(os.environ['LATEX_EDITOR_ROOT'])
+else:
+    ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 
 app = Flask(__name__, static_folder=str(ROOT_DIR / 'code' / 'frontend'))
 CORS(app)
@@ -242,11 +253,29 @@ def check_latex():
     })
 
 
+def graceful_shutdown(signum=None, frame=None):
+    """Handle graceful shutdown for desktop mode"""
+    print("\nShutting down LaTeX Resume Editor...")
+    sys.exit(0)
+
+
 if __name__ == '__main__':
+    # Register signal handlers for clean shutdown
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    if hasattr(signal, 'SIGINT'):
+        signal.signal(signal.SIGINT, graceful_shutdown)
+
+    # Configurable host/port via environment (used by Electron)
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
+    port = int(os.environ.get('FLASK_PORT', '5000'))
+    debug = not ELECTRON_MODE
+
     print("\n" + "="*60)
     print("LaTeX Resume Editor")
+    if ELECTRON_MODE:
+        print("  (Desktop Mode)")
     print("="*60)
-    
+
     compilers = find_available_compilers()
     if compilers:
         print(f"[OK] Available compilers: {', '.join(compilers)}")
@@ -254,9 +283,10 @@ if __name__ == '__main__':
         print("[!] No LaTeX compiler found!")
         print("    Install MiKTeX from: https://miktex.org/download")
         print("    Or TeX Live from: https://tug.org/texlive/")
-    
-    print("\n>>> Open http://localhost:5000 in your browser")
-    print("    Tip: Use Ctrl+M to toggle the editor visibility!")
+
+    print(f"\n>>> Server running on http://{host}:{port}")
+    if not ELECTRON_MODE:
+        print("    Tip: Use Ctrl+M to toggle the editor visibility!")
     print("="*60 + "\n")
-    
-    app.run(debug=True, port=5000)
+
+    app.run(debug=debug, host=host, port=port, use_reloader=False)
