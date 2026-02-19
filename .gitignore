@@ -35,6 +35,19 @@ Thumbs.db
 *.swo
 *~
 
+# Electron / Desktop app build artifacts
+desktop/node_modules/
+desktop/backend-dist/
+desktop/assets/icon.png
+desktop/assets/icon.ico
+dist/
+build/
+*.spec
+
+# npm
+node_modules/
+package-lock.json
+
 # Personal / content at root (not code)
 cover_letter_instruction.md
 Dhairyasheel_Patil_Resume.pdf
