@@ -262,6 +262,11 @@ function createWindow() {
                     accelerator: 'CmdOrCtrl+S',
                     click: () => mainWindow?.webContents.executeJavaScript('saveResume()')
                 },
+                {
+                    label: 'Open in Cursor',
+                    accelerator: 'CmdOrCtrl+Shift+C',
+                    click: () => mainWindow?.webContents.executeJavaScript('openInCursor()')
+                },
                 { type: 'separator' },
                 {
                     label: 'Compile PDF',

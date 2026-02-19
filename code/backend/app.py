@@ -243,6 +243,42 @@ def save_cover_letter(filename):
     return jsonify({'success': True, 'filename': filename})
 
 
+@app.route('/api/open-in-editor', methods=['POST'])
+def open_in_editor():
+    """Open a file in Cursor IDE or VS Code"""
+    data = request.json
+    filename = data.get('filename', '')
+    file_type = data.get('type', 'resume')
+
+    # Resolve path based on type
+    if file_type == 'template':
+        file_path = TEMPLATES_DIR / filename
+    elif file_type == 'cover-letter':
+        file_path = COVER_LETTERS_DIR / filename
+    else:
+        file_path = RESUMES_DIR / filename
+
+    if not file_path.exists():
+        return jsonify({'success': False, 'error': f'File not found: {filename}'}), 404
+
+    # Try Cursor first, then VS Code
+    for editor in ['cursor', 'code']:
+        if shutil.which(editor):
+            try:
+                kwargs = {}
+                if sys.platform == 'win32':
+                    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+                subprocess.Popen([editor, str(file_path)], **kwargs)
+                return jsonify({'success': True, 'editor': editor})
+            except Exception:
+                continue
+
+    return jsonify({
+        'success': False,
+        'error': 'Neither Cursor nor VS Code found on PATH. Please install Cursor from https://cursor.sh'
+    }), 404
+
+
 @app.route('/api/check-latex', methods=['GET'])
 def check_latex():
     """Check which LaTeX compilers are installed"""

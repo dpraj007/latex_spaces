@@ -324,6 +324,42 @@ body {
     color: var(--text-primary);
 }
 
+/* Dropdown item row: file name + "open in cursor" icon side by side */
+.dropdown-item-row {
+    display: flex;
+    align-items: center;
+}
+
+.dropdown-item-row .dropdown-item {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dropdown-item-cursor {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin-right: var(--space-xs);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.dropdown-item-cursor:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+    color: var(--accent-secondary);
+}
+
 .dropdown-empty {
     padding: var(--space-md);
     color: var(--text-muted);

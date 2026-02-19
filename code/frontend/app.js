@@ -28,7 +28,8 @@ const elements = {
     resizeHandle: document.getElementById('resizeHandle'),
     mainContent: document.getElementById('mainContent'),
     minimizeBtn: document.getElementById('minimizeBtn'),
-    toggleEditorBtn: document.getElementById('toggleEditorBtn')
+    toggleEditorBtn: document.getElementById('toggleEditorBtn'),
+    cursorBtn: document.getElementById('cursorBtn')
 };
 
 // State
@@ -43,7 +44,7 @@ const STORAGE_KEYS = {
     source: 'lastOpenedResumeSource' // "saved" | "draft"
 };
 
-// Default LaTeX template for new resumes
+// Default LaTeX template for new resumes (loaded from Templates dropdown)
 const defaultTemplate = `%-------------------------
 % Resume in LaTeX
 % Author: Your Name
@@ -130,6 +131,18 @@ const defaultTemplate = `%-------------------------
     \\textbf{Frameworks:} React, Node.js, Express, Django \\\\
     \\textbf{Tools:} Git, Docker, AWS, PostgreSQL
 \\end{itemize}
+
+\\end{document}
+`;
+
+// Clean minimal template for "New File" — a true blank canvas
+const blankTemplate = `\\documentclass[11pt,a4paper]{article}
+
+\\usepackage[margin=0.75in]{geometry}
+
+\\begin{document}
+
+% Start writing your LaTeX content here
 
 \\end{document}
 `;
@@ -230,12 +243,28 @@ async function loadResumes() {
             elements.resumeDropdown.innerHTML = '<div class="dropdown-empty">No saved resumes</div>';
         } else {
             elements.resumeDropdown.innerHTML = resumes.map(r =>
-                `<button class="dropdown-item" data-filename="${r.filename}">${r.name}</button>`
+                `<div class="dropdown-item-row">
+                    <button class="dropdown-item" data-filename="${r.filename}">${r.name}</button>
+                    <button class="dropdown-item-cursor" data-filename="${r.filename}" data-type="resume" title="Open in Cursor">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15,3 21,3 21,9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                    </button>
+                </div>`
             ).join('');
 
-            // Add click handlers
+            // Add click handlers — load file
             elements.resumeDropdown.querySelectorAll('.dropdown-item').forEach(btn => {
                 btn.addEventListener('click', () => loadResume(btn.dataset.filename));
+            });
+            // Add click handlers — open in Cursor
+            elements.resumeDropdown.querySelectorAll('.dropdown-item-cursor').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openInCursor(btn.dataset.filename, btn.dataset.type);
+                });
             });
         }
     } catch (error) {
@@ -253,12 +282,28 @@ async function loadCoverLetters() {
             elements.coverLetterDropdown.innerHTML = '<div class="dropdown-empty">No saved cover letters</div>';
         } else {
             elements.coverLetterDropdown.innerHTML = coverLetters.map(cl =>
-                `<button class="dropdown-item" data-filename="${cl.filename}">${cl.name}</button>`
+                `<div class="dropdown-item-row">
+                    <button class="dropdown-item" data-filename="${cl.filename}">${cl.name}</button>
+                    <button class="dropdown-item-cursor" data-filename="${cl.filename}" data-type="cover-letter" title="Open in Cursor">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15,3 21,3 21,9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                    </button>
+                </div>`
             ).join('');
 
-            // Add click handlers
+            // Add click handlers — load file
             elements.coverLetterDropdown.querySelectorAll('.dropdown-item').forEach(btn => {
                 btn.addEventListener('click', () => loadCoverLetter(btn.dataset.filename));
+            });
+            // Add click handlers — open in Cursor
+            elements.coverLetterDropdown.querySelectorAll('.dropdown-item-cursor').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openInCursor(btn.dataset.filename, btn.dataset.type);
+                });
             });
         }
     } catch (error) {
@@ -438,15 +483,41 @@ async function loadLastOpenedResume() {
     persistDraft('draft');
 }
 
-// Create new resume
-function newResume() {
-    elements.editor.setValue(defaultTemplate);
-    elements.filenameInput.value = 'my_resume';
+// Create new resume with unique auto-generated filename
+async function newResume() {
+    // Generate a unique filename by checking existing saved resumes
+    let newName = 'untitled_1';
+    try {
+        const response = await fetch('/api/resumes');
+        const resumes = await response.json();
+        const existingNames = new Set(resumes.map(r => r.name));
+
+        let counter = 1;
+        while (existingNames.has(`untitled_${counter}`)) {
+            counter++;
+        }
+        newName = `untitled_${counter}`;
+    } catch {
+        // Fallback if API fails
+        newName = `untitled_${Date.now()}`;
+    }
+
+    // Clean slate: minimal LaTeX canvas, unique filename, reset preview
+    elements.editor.setValue(blankTemplate);
+    elements.filenameInput.value = newName;
     elements.pdfViewer.classList.add('hidden');
     elements.previewPlaceholder.style.display = 'flex';
     elements.downloadBtn.disabled = true;
     currentPdfUrl = null;
-    persistDraft('draft');
+
+    // Clear saved-file association so this is treated as a fresh draft
+    localStorage.removeItem(STORAGE_KEYS.content);
+    localStorage.setItem(STORAGE_KEYS.source, 'draft');
+    localStorage.setItem(STORAGE_KEYS.filename, `${newName}.tex`);
+
+    // Focus the filename input so the user can rename immediately
+    elements.filenameInput.focus();
+    elements.filenameInput.select();
 }
 
 function persistDraft(source = 'draft') {
@@ -460,6 +531,43 @@ function persistDraft(source = 'draft') {
         localStorage.setItem(STORAGE_KEYS.content, elements.editor.getValue());
         localStorage.setItem(STORAGE_KEYS.source, source);
     }, 300);
+}
+
+// Open a file in Cursor IDE (or VS Code as fallback)
+async function openInCursor(filename, type = 'resume') {
+    // If opening the current file, save it to disk first so the editor sees latest content
+    if (!filename) {
+        const currentFilename = elements.filenameInput.value || 'resume';
+        filename = currentFilename + '.tex';
+        type = 'resume';
+
+        // Quick-save to disk before opening
+        try {
+            await fetch(`/api/resumes/${filename}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: elements.editor.getValue() })
+            });
+            loadResumes(); // refresh list
+        } catch {
+            // Continue anyway — file might already exist on disk
+        }
+    }
+
+    try {
+        const response = await fetch('/api/open-in-editor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename, type })
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+            showError(data.error || 'Could not open file in editor.');
+        }
+    } catch (error) {
+        showError('Failed to open in editor: ' + error.message);
+    }
 }
 
 // Download PDF
@@ -556,6 +664,7 @@ function init() {
     elements.minimizeBtn.addEventListener('click', toggleEditor);
     elements.toggleEditorBtn.addEventListener('click', toggleEditor);
     elements.closeToast.addEventListener('click', hideError);
+    elements.cursorBtn.addEventListener('click', () => openInCursor());
     elements.filenameInput.addEventListener('input', () => persistDraft());
 
     // Set initial toggle state
