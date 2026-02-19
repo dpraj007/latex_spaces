@@ -23,13 +23,18 @@ const elements = {
     closeToast: document.getElementById('closeToast'),
     latexStatus: document.getElementById('latexStatus'),
     templateDropdown: document.getElementById('templateDropdown'),
-    resumeDropdown: document.getElementById('resumeDropdown'),
     coverLetterDropdown: document.getElementById('coverLetterDropdown'),
     resizeHandle: document.getElementById('resizeHandle'),
     mainContent: document.getElementById('mainContent'),
     minimizeBtn: document.getElementById('minimizeBtn'),
     toggleEditorBtn: document.getElementById('toggleEditorBtn'),
-    cursorBtn: document.getElementById('cursorBtn')
+    cursorBtn: document.getElementById('cursorBtn'),
+    viewFilesBtn: document.getElementById('viewFilesBtn'),
+    filesBrowserOverlay: document.getElementById('filesBrowserOverlay'),
+    filesBrowserClose: document.getElementById('filesBrowserClose'),
+    filesBrowserSearch: document.getElementById('filesBrowserSearch'),
+    filesBrowserList: document.getElementById('filesBrowserList'),
+    filesBrowserStatus: document.getElementById('filesBrowserStatus')
 };
 
 // State
@@ -41,7 +46,8 @@ let persistTimer = null;
 const STORAGE_KEYS = {
     filename: 'lastOpenedResumeFilename',
     content: 'lastOpenedResumeContent',
-    source: 'lastOpenedResumeSource' // "saved" | "draft"
+    source: 'lastOpenedResumeSource', // "saved" | "draft" | "external"
+    path: 'lastOpenedFilePath'        // full path when opened from file browser
 };
 
 // Default LaTeX template for new resumes (loaded from Templates dropdown)
@@ -233,42 +239,172 @@ async function loadTemplates() {
     }
 }
 
-// Load saved resumes
-async function loadResumes() {
+// ============================================================
+// File Browser Modal
+// ============================================================
+
+let allTexFiles = [];  // cached file list from last scan
+
+function openFileBrowser() {
+    elements.filesBrowserOverlay.classList.remove('hidden');
+    elements.filesBrowserSearch.value = '';
+    elements.filesBrowserList.innerHTML = `
+        <div class="modal-scanning">
+            <div class="loading-spinner" style="width:32px;height:32px;border-width:2px;"></div>
+            <span>Scanning for .tex files...</span>
+        </div>`;
+    elements.filesBrowserStatus.textContent = 'Scanning...';
+    loadAllTexFiles();
+}
+
+function closeFileBrowser() {
+    elements.filesBrowserOverlay.classList.add('hidden');
+}
+
+async function loadAllTexFiles() {
     try {
-        const response = await fetch('/api/resumes');
-        const resumes = await response.json();
+        const response = await fetch('/api/browse-tex-files');
+        allTexFiles = await response.json();
+        renderFileList(allTexFiles);
+    } catch (error) {
+        elements.filesBrowserList.innerHTML = `<div class="dropdown-empty">Failed to scan files: ${error.message}</div>`;
+        elements.filesBrowserStatus.textContent = 'Error scanning files.';
+    }
+}
 
-        if (resumes.length === 0) {
-            elements.resumeDropdown.innerHTML = '<div class="dropdown-empty">No saved resumes</div>';
+function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatRelativeTime(mtime) {
+    const diff = Date.now() / 1000 - mtime;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+    return new Date(mtime * 1000).toLocaleDateString();
+}
+
+function renderFileList(files) {
+    if (files.length === 0) {
+        elements.filesBrowserList.innerHTML = '<div class="dropdown-empty">No .tex files found.</div>';
+        elements.filesBrowserStatus.textContent = 'No files found.';
+        return;
+    }
+
+    // Group by directory; workspace files come first
+    const groups = new Map();
+    const WORKSPACE_KEY = '__workspace__';
+
+    for (const file of files) {
+        const key = file.is_workspace ? WORKSPACE_KEY : file.directory;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(file);
+    }
+
+    // Build HTML
+    let html = '';
+
+    // Workspace group first
+    if (groups.has(WORKSPACE_KEY)) {
+        html += `<div class="file-group">
+            <div class="file-group-header dedicated">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;vertical-align:middle;margin-right:4px;">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                Workspace (dedicated folder)
+            </div>`;
+        for (const file of groups.get(WORKSPACE_KEY)) {
+            html += buildFileItemHTML(file);
+        }
+        html += '</div>';
+    }
+
+    // Other directories
+    for (const [dir, dirFiles] of groups) {
+        if (dir === WORKSPACE_KEY) continue;
+        html += `<div class="file-group">
+            <div class="file-group-header">${escapeHtml(dir)}</div>`;
+        for (const file of dirFiles) {
+            html += buildFileItemHTML(file);
+        }
+        html += '</div>';
+    }
+
+    elements.filesBrowserList.innerHTML = html;
+
+    // Wire up click handlers
+    elements.filesBrowserList.querySelectorAll('.file-item').forEach(item => {
+        item.addEventListener('click', () => {
+            loadFileByPath(item.dataset.path, item.dataset.name);
+        });
+    });
+
+    const total = files.length;
+    elements.filesBrowserStatus.textContent = `${total} file${total !== 1 ? 's' : ''} found`;
+}
+
+function buildFileItemHTML(file) {
+    return `<div class="file-item" data-path="${escapeHtml(file.path)}" data-name="${escapeHtml(file.name)}">
+        <span class="file-item-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14,2 14,8 20,8"/>
+            </svg>
+        </span>
+        <span class="file-item-name">${escapeHtml(file.name)}</span>
+        <span class="file-item-meta">
+            <span>${formatRelativeTime(file.modified)}</span>
+            <span>${formatFileSize(file.size)}</span>
+        </span>
+    </div>`;
+}
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function filterFiles(query) {
+    if (!query.trim()) {
+        renderFileList(allTexFiles);
+        return;
+    }
+    const q = query.toLowerCase();
+    const filtered = allTexFiles.filter(f =>
+        f.name.toLowerCase().includes(q) ||
+        f.path.toLowerCase().includes(q)
+    );
+    renderFileList(filtered);
+}
+
+async function loadFileByPath(filePath, fileName) {
+    try {
+        const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
+        const data = await response.json();
+
+        if (data.content !== undefined) {
+            elements.editor.setValue(data.content);
+            const stem = fileName.replace(/\.tex$/i, '');
+            elements.filenameInput.value = stem;
+
+            // Remember this file
+            localStorage.setItem(STORAGE_KEYS.filename, fileName);
+            localStorage.setItem(STORAGE_KEYS.source, 'external');
+            localStorage.setItem(STORAGE_KEYS.path, filePath);
+            localStorage.removeItem(STORAGE_KEYS.content);
+
+            closeFileBrowser();
         } else {
-            elements.resumeDropdown.innerHTML = resumes.map(r =>
-                `<div class="dropdown-item-row">
-                    <button class="dropdown-item" data-filename="${r.filename}">${r.name}</button>
-                    <button class="dropdown-item-cursor" data-filename="${r.filename}" data-type="resume" title="Open in Cursor">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                            <polyline points="15,3 21,3 21,9"/>
-                            <line x1="10" y1="14" x2="21" y2="3"/>
-                        </svg>
-                    </button>
-                </div>`
-            ).join('');
-
-            // Add click handlers — load file
-            elements.resumeDropdown.querySelectorAll('.dropdown-item').forEach(btn => {
-                btn.addEventListener('click', () => loadResume(btn.dataset.filename));
-            });
-            // Add click handlers — open in Cursor
-            elements.resumeDropdown.querySelectorAll('.dropdown-item-cursor').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openInCursor(btn.dataset.filename, btn.dataset.type);
-                });
-            });
+            showError(data.error || 'Failed to load file.');
         }
     } catch (error) {
-        console.error('Failed to load resumes:', error);
+        showError('Failed to load file: ' + error.message);
     }
 }
 
@@ -418,9 +554,6 @@ async function saveResume(e) {
         const data = await response.json();
 
         if (data.success) {
-            // Reload resumes list
-            loadResumes();
-
             // Remember this as the last opened resume
             localStorage.setItem(STORAGE_KEYS.filename, data.filename);
             localStorage.setItem(STORAGE_KEYS.source, 'saved');
@@ -454,17 +587,31 @@ async function loadLastOpenedResume() {
     const lastResume = localStorage.getItem(STORAGE_KEYS.filename);
     const lastContent = localStorage.getItem(STORAGE_KEYS.content);
     const lastSource = localStorage.getItem(STORAGE_KEYS.source);
+    const lastPath = localStorage.getItem(STORAGE_KEYS.path);
+
+    // Try loading a file opened from the file browser (external path)
+    if (lastSource === 'external' && lastPath) {
+        try {
+            const response = await fetch(`/api/file?path=${encodeURIComponent(lastPath)}`);
+            const data = await response.json();
+            if (data.content) {
+                elements.editor.setValue(data.content);
+                elements.filenameInput.value = lastResume ? lastResume.replace('.tex', '') : 'my_resume';
+                return;
+            }
+        } catch (error) {
+            console.log('Last external file not found, falling back to draft');
+        }
+    }
 
     if (lastSource === 'saved' && lastResume) {
         try {
-            // Try to load the last opened saved resume
             const response = await fetch(`/api/resumes/${lastResume}`);
             const data = await response.json();
-
             if (data.content) {
                 elements.editor.setValue(data.content);
                 elements.filenameInput.value = lastResume.replace('.tex', '');
-                return; // Successfully loaded
+                return;
             }
         } catch (error) {
             console.log('Last opened resume not found, falling back to local draft');
@@ -651,7 +798,6 @@ function init() {
     initEditor();
     checkLatexStatus();
     loadTemplates();
-    loadResumes();
     loadCoverLetters();
     setupResizeHandle();
 
@@ -666,6 +812,16 @@ function init() {
     elements.closeToast.addEventListener('click', hideError);
     elements.cursorBtn.addEventListener('click', () => openInCursor());
     elements.filenameInput.addEventListener('input', () => persistDraft());
+
+    // File browser
+    elements.viewFilesBtn.addEventListener('click', openFileBrowser);
+    elements.filesBrowserClose.addEventListener('click', closeFileBrowser);
+    elements.filesBrowserOverlay.addEventListener('click', (e) => {
+        if (e.target === elements.filesBrowserOverlay) closeFileBrowser();
+    });
+    elements.filesBrowserSearch.addEventListener('input', (e) => {
+        filterFiles(e.target.value);
+    });
 
     // Set initial toggle state
     elements.toggleEditorBtn.classList.add('active');

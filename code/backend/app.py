@@ -289,6 +289,106 @@ def check_latex():
     })
 
 
+@app.route('/api/browse-tex-files', methods=['GET'])
+def browse_tex_files():
+    """Search accessible directories for all .tex files on the system"""
+    tex_files = []
+    seen_paths = set()
+
+    # Directories to skip (system, build, cache, hidden heavy dirs)
+    SKIP_DIRS = {
+        'node_modules', '.git', '__pycache__', '.venv', 'venv',
+        'env', 'dist', 'build', '.cache', '.npm', '.cargo',
+        'proc', 'sys', 'dev', 'run', 'snap', 'lost+found',
+    }
+
+    def scan_dir(base_path, max_depth=8):
+        base = Path(str(base_path))
+        if not base.exists() or not base.is_dir():
+            return
+        try:
+            for root, dirs, files in os.walk(str(base)):
+                root_path = Path(root)
+                try:
+                    depth = len(root_path.relative_to(base).parts)
+                except ValueError:
+                    depth = 0
+                if depth >= max_depth:
+                    dirs.clear()
+                    continue
+                # Prune dirs in-place to control traversal
+                dirs[:] = [
+                    d for d in dirs
+                    if d not in SKIP_DIRS and not d.startswith('.')
+                ]
+                for filename in files:
+                    if filename.lower().endswith('.tex'):
+                        file_path = root_path / filename
+                        try:
+                            resolved = str(file_path.resolve())
+                        except OSError:
+                            resolved = str(file_path)
+                        if resolved in seen_paths:
+                            continue
+                        seen_paths.add(resolved)
+                        try:
+                            stat = file_path.stat()
+                            tex_files.append({
+                                'path': str(file_path),
+                                'name': filename,
+                                'stem': file_path.stem,
+                                'directory': str(root_path),
+                                'modified': stat.st_mtime,
+                                'size': stat.st_size,
+                                'is_workspace': str(file_path).startswith(str(ROOT_DIR))
+                            })
+                        except (OSError, PermissionError):
+                            pass
+        except (PermissionError, OSError):
+            pass
+
+    # Search all user home directories
+    scan_dir('/home', max_depth=9)
+    # Root's home
+    scan_dir('/root', max_depth=8)
+    # Temp directory
+    scan_dir('/tmp', max_depth=3)
+    # App workspace (covers latex/resumes, templates, cover_letters)
+    scan_dir(ROOT_DIR, max_depth=8)
+    # Current working directory if outside the above
+    cwd = Path.cwd()
+    if not str(cwd).startswith('/home') and str(cwd) != str(ROOT_DIR):
+        scan_dir(cwd, max_depth=6)
+
+    # Sort: newest modified first
+    tex_files.sort(key=lambda x: x['modified'], reverse=True)
+    return jsonify(tex_files)
+
+
+@app.route('/api/file', methods=['GET'])
+def get_tex_file():
+    """Get content of any .tex file by its full path"""
+    path_str = request.args.get('path', '')
+    if not path_str:
+        return jsonify({'error': 'No path provided'}), 400
+
+    file_path = Path(path_str)
+    if file_path.suffix.lower() != '.tex':
+        return jsonify({'error': 'Not a .tex file'}), 400
+    if not file_path.exists():
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        content = file_path.read_text(encoding='utf-8', errors='replace')
+        return jsonify({
+            'content': content,
+            'path': str(file_path),
+            'name': file_path.name
+        })
+    except (PermissionError, OSError) as e:
+        return jsonify({'error': str(e)}), 403
+
+
 def graceful_shutdown(signum=None, frame=None):
     """Handle graceful shutdown for desktop mode"""
     print("\nShutting down LaTeX Resume Editor...")
