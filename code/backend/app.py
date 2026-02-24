@@ -1,6 +1,6 @@
 """
-LaTeX Resume Editor - Backend Server
-A Flask application for editing and compiling LaTeX resumes.
+LaTeX Document Editor - Backend Server
+A Flask application for editing and compiling LaTeX documents.
 Supports both standalone web mode and Electron desktop mode.
 """
 
@@ -40,6 +40,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 RESUMES_DIR.mkdir(parents=True, exist_ok=True)
 COVER_LETTERS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Cache for expensive whole-system .tex scan used by the file browser.
+# None means "not scanned yet".
+TEX_FILES_CACHE = None
+
 
 def find_available_compilers():
     """Find all available LaTeX compilers on the system"""
@@ -49,6 +53,54 @@ def find_available_compilers():
         if shutil.which(compiler):
             available.append(compiler)
     return available
+
+
+def find_editor_commands():
+    """
+    Resolve launch commands for Cursor / VS Code.
+    Returns a list of tuples: (editor_name, executable_path_or_cmd).
+    """
+    candidates = []
+    seen = set()
+
+    def add_candidate(editor_name, command):
+        if not command:
+            return
+        key = str(command).lower()
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append((editor_name, str(command)))
+
+    # 1) PATH-based discovery
+    cursor_on_path = shutil.which('cursor')
+    code_on_path = shutil.which('code')
+    add_candidate('cursor', cursor_on_path)
+    add_candidate('code', code_on_path)
+
+    # 2) User-configured env overrides (absolute paths preferred)
+    add_candidate('cursor', os.environ.get('CURSOR_EXE'))
+    add_candidate('code', os.environ.get('VSCODE_EXE'))
+
+    # 3) Well-known install locations (Windows)
+    if sys.platform == 'win32':
+        known_paths = [
+            ('cursor', Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs' / 'Cursor' / 'Cursor.exe'),
+            ('cursor', Path(os.environ.get('ProgramFiles', r'C:\Program Files')) / 'Cursor' / 'Cursor.exe'),
+            ('cursor', Path(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')) / 'Cursor' / 'Cursor.exe'),
+            ('cursor', Path(os.environ.get('ProgramFiles(Arm)', r'C:\Program Files (Arm)')) / 'Cursor' / 'Cursor.exe'),
+            ('cursor', Path(os.environ.get('ProgramW6432', r'C:\Program Files')) / 'Cursor' / 'Cursor.exe'),
+            ('code', Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs' / 'Microsoft VS Code' / 'Code.exe'),
+            ('code', Path(os.environ.get('ProgramFiles', r'C:\Program Files')) / 'Microsoft VS Code' / 'Code.exe'),
+            ('code', Path(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')) / 'Microsoft VS Code' / 'Code.exe'),
+            ('code', Path(os.environ.get('ProgramFiles(Arm)', r'C:\Program Files (Arm)')) / 'Microsoft VS Code' / 'Code.exe'),
+            ('code', Path(os.environ.get('ProgramW6432', r'C:\Program Files')) / 'Microsoft VS Code' / 'Code.exe'),
+        ]
+        for editor_name, path_candidate in known_paths:
+            if str(path_candidate) and path_candidate.exists():
+                add_candidate(editor_name, path_candidate)
+
+    return candidates
 
 
 def compile_latex(latex_content, filename='resume', compiler='pdflatex'):
@@ -110,6 +162,15 @@ def serve_static(path):
     return send_from_directory(app.static_folder, path)
 
 
+@app.route('/api/health', methods=['GET'])
+def health():
+    """Simple health endpoint for local checks and CI smoke tests."""
+    return jsonify({
+        'status': 'ok',
+        'electron_mode': ELECTRON_MODE
+    })
+
+
 @app.route('/api/compile', methods=['POST'])
 def compile_resume():
     """Compile LaTeX content and return PDF"""
@@ -128,14 +189,31 @@ def compile_resume():
     
     return jsonify({
         'success': True,
-        'pdf_url': f'/api/pdf/{filename}.pdf'
+        'pdf_url': f'/api/pdf/{filename}.pdf',
+        'pdf_filename': f'{filename}.pdf'
     })
 
 
 @app.route('/api/pdf/<filename>')
 def get_pdf(filename):
     """Serve compiled PDF"""
-    return send_from_directory(OUTPUT_DIR, filename)
+    if not filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'Invalid PDF filename'}), 400
+    return send_from_directory(OUTPUT_DIR, filename, mimetype='application/pdf')
+
+
+@app.route('/api/pdf-download/<filename>')
+def download_pdf(filename):
+    """Download compiled PDF as an attachment with stable filename."""
+    if not filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'Invalid PDF filename'}), 400
+    return send_from_directory(
+        OUTPUT_DIR,
+        filename,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename
+    )
 
 
 @app.route('/api/templates', methods=['GET'])
@@ -198,6 +276,7 @@ def save_resume(filename):
     
     resume_path = RESUMES_DIR / filename
     resume_path.write_text(content, encoding='utf-8')
+    upsert_cached_tex_file(resume_path)
     
     return jsonify({'success': True, 'filename': filename})
 
@@ -239,6 +318,7 @@ def save_cover_letter(filename):
     
     cover_letter_path = COVER_LETTERS_DIR / filename
     cover_letter_path.write_text(content, encoding='utf-8')
+    upsert_cached_tex_file(cover_letter_path)
     
     return jsonify({'success': True, 'filename': filename})
 
@@ -261,21 +341,30 @@ def open_in_editor():
     if not file_path.exists():
         return jsonify({'success': False, 'error': f'File not found: {filename}'}), 404
 
-    # Try Cursor first, then VS Code
-    for editor in ['cursor', 'code']:
-        if shutil.which(editor):
-            try:
-                kwargs = {}
-                if sys.platform == 'win32':
-                    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-                subprocess.Popen([editor, str(file_path)], **kwargs)
-                return jsonify({'success': True, 'editor': editor})
-            except Exception:
-                continue
+    # Try Cursor first, then VS Code using PATH + known install locations
+    launch_errors = []
+    file_dir = str(file_path.parent)
+    file_abs = str(file_path)
 
+    for editor_name, command in find_editor_commands():
+        try:
+            kwargs = {}
+            if sys.platform == 'win32':
+                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            # Open a new window rooted at the file directory, and open the file in that window.
+            # Cursor/VS Code CLIs are compatible with this argument style.
+            subprocess.Popen([command, '--new-window', file_dir, file_abs], **kwargs)
+            return jsonify({'success': True, 'editor': editor_name})
+        except Exception as e:
+            launch_errors.append(f"{editor_name}: {e}")
+            continue
+
+    diagnostic = ''
+    if launch_errors:
+        diagnostic = f" Attempted launch commands failed: {' | '.join(launch_errors[:3])}."
     return jsonify({
         'success': False,
-        'error': 'Neither Cursor nor VS Code found on PATH. Please install Cursor from https://cursor.sh'
+        'error': 'Neither Cursor nor VS Code could be launched. Install Cursor from https://cursor.sh or set CURSOR_EXE/VSCODE_EXE.' + diagnostic
     }), 404
 
 
@@ -289,11 +378,15 @@ def check_latex():
     })
 
 
-@app.route('/api/browse-tex-files', methods=['GET'])
-def browse_tex_files():
-    """Search accessible directories for all .tex files on the system"""
+def build_tex_file_index():
+    """Search accessible directories for all .tex files on the system."""
     tex_files = []
     seen_paths = set()
+    seen_roots = set()
+    try:
+        workspace_root = ROOT_DIR.resolve()
+    except OSError:
+        workspace_root = ROOT_DIR
 
     # Directories to skip (system, build, cache, hidden heavy dirs)
     SKIP_DIRS = {
@@ -302,8 +395,32 @@ def browse_tex_files():
         'proc', 'sys', 'dev', 'run', 'snap', 'lost+found',
     }
 
-    def scan_dir(base_path, max_depth=8):
-        base = Path(str(base_path))
+    def is_workspace_path(file_path):
+        try:
+            file_resolved = file_path.resolve()
+        except OSError:
+            file_resolved = file_path
+        try:
+            common = Path(os.path.commonpath([str(file_resolved), str(workspace_root)]))
+        except ValueError:
+            return False
+        return common == workspace_root
+
+    def queue_root(base_path, max_depth=8):
+        base = Path(str(base_path)).expanduser()
+        if not base.exists() or not base.is_dir():
+            return
+        try:
+            key = str(base.resolve()).lower()
+        except OSError:
+            key = str(base).lower()
+        if key in seen_roots:
+            return
+        seen_roots.add(key)
+        scan_dir(base, max_depth=max_depth)
+
+    def scan_dir(base, max_depth=8):
+        base = Path(str(base))
         if not base.exists() or not base.is_dir():
             return
         try:
@@ -334,35 +451,133 @@ def browse_tex_files():
                         try:
                             stat = file_path.stat()
                             tex_files.append({
-                                'path': str(file_path),
+                                'path': resolved,
                                 'name': filename,
                                 'stem': file_path.stem,
                                 'directory': str(root_path),
                                 'modified': stat.st_mtime,
                                 'size': stat.st_size,
-                                'is_workspace': str(file_path).startswith(str(ROOT_DIR))
+                                'is_workspace': is_workspace_path(file_path)
                             })
                         except (OSError, PermissionError):
                             pass
         except (PermissionError, OSError):
             pass
 
-    # Search all user home directories
-    scan_dir('/home', max_depth=9)
-    # Root's home
-    scan_dir('/root', max_depth=8)
-    # Temp directory
-    scan_dir('/tmp', max_depth=3)
+    home = Path.home()
+
+    # Platform-specific roots
+    if sys.platform.startswith('win'):
+        user_profile = Path(os.environ.get('USERPROFILE', str(home)))
+        one_drive = os.environ.get('OneDrive')
+        public_profile = Path(os.environ.get('PUBLIC', r'C:\Users\Public'))
+
+        queue_root(user_profile / 'Desktop', max_depth=8)
+        queue_root(user_profile / 'Documents', max_depth=8)
+        queue_root(user_profile / 'Downloads', max_depth=8)
+        queue_root(public_profile / 'Desktop', max_depth=5)
+
+        if one_drive:
+            queue_root(Path(one_drive) / 'Desktop', max_depth=8)
+            queue_root(Path(one_drive) / 'Documents', max_depth=8)
+
+        # Broad fallback so Desktop-visible folders and other user folders are discoverable.
+        queue_root(user_profile, max_depth=7)
+    else:
+        queue_root('/home', max_depth=9)
+        queue_root('/root', max_depth=8)
+        queue_root('/tmp', max_depth=3)
+        queue_root(home, max_depth=8)
+
     # App workspace (covers latex/resumes, templates, cover_letters)
-    scan_dir(ROOT_DIR, max_depth=8)
+    queue_root(ROOT_DIR, max_depth=8)
+
     # Current working directory if outside the above
     cwd = Path.cwd()
-    if not str(cwd).startswith('/home') and str(cwd) != str(ROOT_DIR):
-        scan_dir(cwd, max_depth=6)
+    try:
+        cwd_resolved = cwd.resolve()
+    except OSError:
+        cwd_resolved = cwd
+    if not is_workspace_path(cwd_resolved):
+        queue_root(cwd_resolved, max_depth=6)
 
     # Sort: newest modified first
     tex_files.sort(key=lambda x: x['modified'], reverse=True)
-    return jsonify(tex_files)
+    return tex_files
+
+
+def upsert_cached_tex_file(file_path):
+    """Insert/update one .tex file entry in the cached file index."""
+    global TEX_FILES_CACHE
+    if TEX_FILES_CACHE is None:
+        return
+
+    file_path = Path(file_path)
+    if file_path.suffix.lower() != '.tex' or not file_path.exists():
+        return
+
+    try:
+        resolved_path = str(file_path.resolve())
+    except OSError:
+        resolved_path = str(file_path)
+
+    try:
+        workspace_root = ROOT_DIR.resolve()
+    except OSError:
+        workspace_root = ROOT_DIR
+
+    try:
+        file_resolved = file_path.resolve()
+    except OSError:
+        file_resolved = file_path
+
+    try:
+        common = Path(os.path.commonpath([str(file_resolved), str(workspace_root)]))
+        is_workspace = common == workspace_root
+    except ValueError:
+        is_workspace = False
+
+    try:
+        stat = file_path.stat()
+    except (OSError, PermissionError):
+        return
+
+    entry = {
+        'path': resolved_path,
+        'name': file_path.name,
+        'stem': file_path.stem,
+        'directory': str(file_path.parent),
+        'modified': stat.st_mtime,
+        'size': stat.st_size,
+        'is_workspace': is_workspace
+    }
+
+    replaced = False
+    for idx, existing in enumerate(TEX_FILES_CACHE):
+        if existing.get('path') == resolved_path:
+            TEX_FILES_CACHE[idx] = entry
+            replaced = True
+            break
+
+    if not replaced:
+        TEX_FILES_CACHE.append(entry)
+
+    TEX_FILES_CACHE.sort(key=lambda x: x['modified'], reverse=True)
+
+
+@app.route('/api/browse-tex-files', methods=['GET'])
+def browse_tex_files():
+    """
+    Return all discoverable .tex files.
+    Expensive system scan is done only once per app run unless refresh=1.
+    """
+    global TEX_FILES_CACHE
+    refresh = request.args.get('refresh') in {'1', 'true', 'yes'}
+
+    if TEX_FILES_CACHE is None or refresh:
+        TEX_FILES_CACHE = build_tex_file_index()
+
+    return jsonify(TEX_FILES_CACHE)
 
 
 @app.route('/api/file', methods=['GET'])
@@ -391,7 +606,7 @@ def get_tex_file():
 
 def graceful_shutdown(signum=None, frame=None):
     """Handle graceful shutdown for desktop mode"""
-    print("\nShutting down LaTeX Resume Editor...")
+    print("\nShutting down LaTeX Document Editor...")
     sys.exit(0)
 
 
@@ -407,7 +622,7 @@ if __name__ == '__main__':
     debug = not ELECTRON_MODE
 
     print("\n" + "="*60)
-    print("LaTeX Resume Editor")
+    print("LaTeX Document Editor")
     if ELECTRON_MODE:
         print("  (Desktop Mode)")
     print("="*60)
