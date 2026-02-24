@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM LaTeX Resume Editor - Quick Launcher
+REM LaTeX Editor - Quick Launcher
 REM
 REM Double-click this to run the app instantly in dev mode.
 REM For the full desktop app experience, run setup-desktop.bat
@@ -10,7 +10,7 @@ REM ============================================================
 cd /d "%~dp0"
 
 echo.
-echo  Starting LaTeX Resume Editor...
+echo  Starting LaTeX Editor...
 echo.
 
 REM Check if the installed Electron app exists
@@ -39,3 +39,4 @@ echo  Starting server...
 echo  Open http://localhost:5000 in your browser
 echo.
 python code\backend\app.py
+

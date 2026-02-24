@@ -1,5 +1,5 @@
 /**
- * LaTeX Resume Editor - Frontend Application
+ * LaTeX Editor - Frontend Application
  * Handles editor initialization, compilation, and file management
  */
 
@@ -22,12 +22,15 @@ const elements = {
     errorMessage: document.getElementById('errorMessage'),
     closeToast: document.getElementById('closeToast'),
     latexStatus: document.getElementById('latexStatus'),
+    templateBtn: document.getElementById('templateBtn'),
     templateDropdown: document.getElementById('templateDropdown'),
+    coverLetterBtn: document.getElementById('coverLetterBtn'),
     coverLetterDropdown: document.getElementById('coverLetterDropdown'),
     resizeHandle: document.getElementById('resizeHandle'),
     mainContent: document.getElementById('mainContent'),
     minimizeBtn: document.getElementById('minimizeBtn'),
     toggleEditorBtn: document.getElementById('toggleEditorBtn'),
+    backToEditorBtn: document.getElementById('backToEditorBtn'),
     cursorBtn: document.getElementById('cursorBtn'),
     viewFilesBtn: document.getElementById('viewFilesBtn'),
     filesBrowserOverlay: document.getElementById('filesBrowserOverlay'),
@@ -39,109 +42,40 @@ const elements = {
 
 // State
 let currentPdfUrl = null;
+let currentPdfFilename = null;
 let wordWrap = true;
 let editorVisible = true;
 let persistTimer = null;
 
 const STORAGE_KEYS = {
-    filename: 'lastOpenedResumeFilename',
-    content: 'lastOpenedResumeContent',
-    source: 'lastOpenedResumeSource', // "saved" | "draft" | "external"
+    filename: 'lastOpenedDocumentFilename',
+    content: 'lastOpenedDocumentContent',
+    source: 'lastOpenedDocumentSource', // "saved" | "draft" | "external"
     path: 'lastOpenedFilePath'        // full path when opened from file browser
 };
 
-// Default LaTeX template for new resumes (loaded from Templates dropdown)
-const defaultTemplate = `%-------------------------
-% Resume in LaTeX
-% Author: Your Name
-%-------------------------
+// Default LaTeX template for documents
+const defaultTemplate = `\\documentclass[11pt,a4paper]{article}
 
-\\documentclass[11pt,a4paper]{article}
-
-\\usepackage[utf8]{inputenc}
+\\usepackage[margin=1in]{geometry}
 \\usepackage[T1]{fontenc}
 \\usepackage{lmodern}
-\\usepackage[margin=0.75in]{geometry}
-\\usepackage{hyperref}
-\\usepackage{enumitem}
-\\usepackage{titlesec}
-\\usepackage{xcolor}
+\\usepackage{amsmath,amssymb}
 
-% Colors
-\\definecolor{primary}{RGB}{45, 55, 72}
-\\definecolor{accent}{RGB}{79, 70, 229}
-
-% Section formatting
-\\titleformat{\\section}{\\Large\\bfseries\\color{primary}}{}{0em}{}[\\titlerule]
-\\titlespacing{\\section}{0pt}{12pt}{8pt}
-
-% Remove page numbers
-\\pagenumbering{gobble}
-
-% Custom commands
-\\newcommand{\\resumeItem}[1]{\\item\\small{#1}}
-\\newcommand{\\resumeSubheading}[4]{
-  \\item
-    \\begin{tabular*}{\\textwidth}{l@{\\extracolsep{\\fill}}r}
-      \\textbf{#1} & #2 \\\\
-      \\textit{\\small#3} & \\textit{\\small #4} \\\\
-    \\end{tabular*}
-}
+\\title{My Document}
+\\author{Author Name}
+\\date{\\today}
 
 \\begin{document}
+\\maketitle
 
-%----------HEADING----------
-\\begin{center}
-    {\\Huge\\bfseries Your Name} \\\\[4pt]
-    \\small
-    \\href{mailto:email@example.com}{email@example.com} $|$
-    \\href{tel:+1234567890}{(123) 456-7890} $|$
-    \\href{https://linkedin.com/in/yourprofile}{LinkedIn} $|$
-    \\href{https://github.com/yourusername}{GitHub}
-\\end{center}
-
-%----------EDUCATION----------
-\\section{Education}
-\\begin{itemize}[leftmargin=0.15in, label={}]
-    \\resumeSubheading
-      {University Name}{City, State}
-      {Bachelor of Science in Computer Science}{Aug 2019 -- May 2023}
-\\end{itemize}
-
-%----------EXPERIENCE----------
-\\section{Experience}
-\\begin{itemize}[leftmargin=0.15in, label={}]
-    \\resumeSubheading
-      {Software Engineer}{Jan 2023 -- Present}
-      {Company Name}{City, State}
-      \\begin{itemize}
-          \\resumeItem{Developed and maintained web applications using React and Node.js}
-          \\resumeItem{Collaborated with cross-functional teams to deliver features on schedule}
-          \\resumeItem{Improved application performance by 40\\% through code optimization}
-      \\end{itemize}
-\\end{itemize}
-
-%----------PROJECTS----------
-\\section{Projects}
-\\begin{itemize}[leftmargin=0.15in, label={}]
-    \\item
-    \\textbf{Project Name} $|$ \\textit{React, Node.js, MongoDB} \\\\
-    \\small{A brief description of the project and its key features.}
-\\end{itemize}
-
-%----------SKILLS----------
-\\section{Skills}
-\\begin{itemize}[leftmargin=0.15in, label={}]
-    \\item
-    \\textbf{Languages:} JavaScript, Python, Java, C++ \\\\
-    \\textbf{Frameworks:} React, Node.js, Express, Django \\\\
-    \\textbf{Tools:} Git, Docker, AWS, PostgreSQL
-\\end{itemize}
+\\section{Introduction}
+Start writing your LaTeX document here.
 
 \\end{document}
 `;
 
-// Clean minimal template for "New File" — a true blank canvas
+// Clean minimal template for "New File" - a true blank canvas
 const blankTemplate = `\\documentclass[11pt,a4paper]{article}
 
 \\usepackage[margin=0.75in]{geometry}
@@ -167,10 +101,10 @@ function initEditor() {
         tabSize: 2,
         indentWithTabs: false,
         extraKeys: {
-            'Ctrl-Enter': compileResume,
-            'Cmd-Enter': compileResume,
-            'Ctrl-S': saveResume,
-            'Cmd-S': saveResume,
+            'Ctrl-Enter': compileDocument,
+            'Cmd-Enter': compileDocument,
+            'Ctrl-S': saveDocument,
+            'Cmd-S': saveDocument,
             'Tab': (cm) => cm.execCommand('indentMore'),
             'Shift-Tab': (cm) => cm.execCommand('indentLess'),
             'Ctrl-M': toggleEditor,
@@ -178,8 +112,8 @@ function initEditor() {
         }
     });
 
-    // Try to load last opened resume, otherwise use default template
-    loadLastOpenedResume();
+    // Try to load last opened document, otherwise use default template
+    loadLastOpenedDocument();
 
     // Persist draft content while typing (debounced)
     elements.editor.on('change', () => {
@@ -244,17 +178,58 @@ async function loadTemplates() {
 // ============================================================
 
 let allTexFiles = [];  // cached file list from last scan
+let texFilesLoaded = false;
+let texFilesLoading = false;
 
 function openFileBrowser() {
     elements.filesBrowserOverlay.classList.remove('hidden');
     elements.filesBrowserSearch.value = '';
-    elements.filesBrowserList.innerHTML = `
-        <div class="modal-scanning">
-            <div class="loading-spinner" style="width:32px;height:32px;border-width:2px;"></div>
-            <span>Scanning for .tex files...</span>
-        </div>`;
-    elements.filesBrowserStatus.textContent = 'Scanning...';
-    loadAllTexFiles();
+    if (texFilesLoading && !texFilesLoaded) {
+        elements.filesBrowserList.innerHTML = `
+            <div class="modal-scanning">
+                <div class="loading-spinner" style="width:32px;height:32px;border-width:2px;"></div>
+                <span>Scanning for .tex files...</span>
+            </div>`;
+        elements.filesBrowserStatus.textContent = 'Scanning...';
+        return;
+    }
+
+    if (texFilesLoaded) {
+        renderFileList(allTexFiles);
+        return;
+    } else {
+        elements.filesBrowserList.innerHTML = `
+            <div class="modal-scanning">
+                <div class="loading-spinner" style="width:32px;height:32px;border-width:2px;"></div>
+                <span>Scanning for .tex files...</span>
+            </div>`;
+        elements.filesBrowserStatus.textContent = 'Scanning...';
+    }
+}
+
+function setupDropdownButtons() {
+    const closeAll = () => {
+        elements.templateDropdown.style.display = '';
+        elements.coverLetterDropdown.style.display = '';
+    };
+
+    elements.templateBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = elements.templateDropdown.style.display === 'block';
+        closeAll();
+        if (!open) elements.templateDropdown.style.display = 'block';
+    });
+
+    elements.coverLetterBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = elements.coverLetterDropdown.style.display === 'block';
+        closeAll();
+        if (!open) elements.coverLetterDropdown.style.display = 'block';
+    });
+
+    document.addEventListener('click', closeAll);
 }
 
 function closeFileBrowser() {
@@ -262,13 +237,23 @@ function closeFileBrowser() {
 }
 
 async function loadAllTexFiles() {
+    if (texFilesLoading) return;
+    texFilesLoading = true;
     try {
         const response = await fetch('/api/browse-tex-files');
         allTexFiles = await response.json();
-        renderFileList(allTexFiles);
+        texFilesLoaded = true;
+        if (!elements.filesBrowserOverlay.classList.contains('hidden')) {
+            renderFileList(allTexFiles);
+        }
     } catch (error) {
-        elements.filesBrowserList.innerHTML = `<div class="dropdown-empty">Failed to scan files: ${error.message}</div>`;
-        elements.filesBrowserStatus.textContent = 'Error scanning files.';
+        texFilesLoaded = false;
+        if (!elements.filesBrowserOverlay.classList.contains('hidden')) {
+            elements.filesBrowserList.innerHTML = `<div class="dropdown-empty">Failed to scan files: ${error.message}</div>`;
+            elements.filesBrowserStatus.textContent = 'Error scanning files.';
+        }
+    } finally {
+        texFilesLoading = false;
     }
 }
 
@@ -408,19 +393,30 @@ async function loadFileByPath(filePath, fileName) {
     }
 }
 
-// Load saved cover letters
-async function loadCoverLetters() {
+// Load saved documents (both documents and cover letters)
+async function loadSavedDocuments() {
     try {
-        const response = await fetch('/api/cover-letters');
-        const coverLetters = await response.json();
+        const [documentsResponse, coverLettersResponse] = await Promise.all([
+            fetch('/api/documents'),
+            fetch('/api/cover-letters')
+        ]);
+        const documents = await documentsResponse.json();
+        const coverLetters = await coverLettersResponse.json();
 
-        if (coverLetters.length === 0) {
-            elements.coverLetterDropdown.innerHTML = '<div class="dropdown-empty">No saved cover letters</div>';
+        const docs = [
+            ...documents.map(r => ({ ...r, docType: 'document' })),
+            ...coverLetters.map(c => ({ ...c, docType: 'cover-letter' }))
+        ].sort((a, b) => b.modified - a.modified);
+
+        if (docs.length === 0) {
+            elements.coverLetterDropdown.innerHTML = '<div class="dropdown-empty">No saved documents</div>';
         } else {
-            elements.coverLetterDropdown.innerHTML = coverLetters.map(cl =>
+            elements.coverLetterDropdown.innerHTML = docs.map(doc =>
                 `<div class="dropdown-item-row">
-                    <button class="dropdown-item" data-filename="${cl.filename}">${cl.name}</button>
-                    <button class="dropdown-item-cursor" data-filename="${cl.filename}" data-type="cover-letter" title="Open in Cursor">
+                    <button class="dropdown-item" data-filename="${doc.filename}" data-type="${doc.docType}">
+                        ${doc.name} <span style="opacity:.6">(${doc.docType === 'document' ? 'Document' : 'Cover Letter'})</span>
+                    </button>
+                    <button class="dropdown-item-cursor" data-filename="${doc.filename}" data-type="${doc.docType}" title="Open in Cursor">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                             <polyline points="15,3 21,3 21,9"/>
@@ -430,11 +426,11 @@ async function loadCoverLetters() {
                 </div>`
             ).join('');
 
-            // Add click handlers — load file
+            // Add click handlers - load file
             elements.coverLetterDropdown.querySelectorAll('.dropdown-item').forEach(btn => {
-                btn.addEventListener('click', () => loadCoverLetter(btn.dataset.filename));
+                btn.addEventListener('click', () => loadSavedDocument(btn.dataset.filename, btn.dataset.type));
             });
-            // Add click handlers — open in Cursor
+            // Add click handlers - open in Cursor
             elements.coverLetterDropdown.querySelectorAll('.dropdown-item-cursor').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -443,8 +439,16 @@ async function loadCoverLetters() {
             });
         }
     } catch (error) {
-        console.error('Failed to load cover letters:', error);
+        console.error('Failed to load saved documents:', error);
+        elements.coverLetterDropdown.innerHTML = '<div class="dropdown-empty">Failed to load saved documents</div>';
     }
+}
+
+async function loadSavedDocument(filename, type = 'document') {
+    if (type === 'cover-letter') {
+        return loadCoverLetter(filename);
+    }
+    return loadDocument(filename);
 }
 
 // Load a template
@@ -463,22 +467,22 @@ async function loadTemplate(filename) {
     }
 }
 
-// Load a saved resume
-async function loadResume(filename) {
+// Load a saved document
+async function loadDocument(filename) {
     try {
-        const response = await fetch(`/api/resumes/${filename}`);
+        const response = await fetch(`/api/documents/${filename}`);
         const data = await response.json();
 
         if (data.content) {
             elements.editor.setValue(data.content);
             elements.filenameInput.value = filename.replace('.tex', '');
-            // Remember this as the last opened resume
+            // Remember this as the last opened document
             localStorage.setItem(STORAGE_KEYS.filename, filename);
             localStorage.setItem(STORAGE_KEYS.source, 'saved');
             localStorage.removeItem(STORAGE_KEYS.content);
         }
     } catch (error) {
-        console.error('Failed to load resume:', error);
+        console.error('Failed to load document:', error);
     }
 }
 
@@ -501,10 +505,24 @@ async function loadCoverLetter(filename) {
     }
 }
 
-// Compile resume
-async function compileResume() {
+function showFullPreview() {
+    if (editorVisible) {
+        toggleEditor();
+    }
+    elements.backToEditorBtn.hidden = false;
+}
+
+function showEditorPanel() {
+    if (!editorVisible) {
+        toggleEditor();
+    }
+    elements.backToEditorBtn.hidden = true;
+}
+
+// Compile document
+async function compileDocument() {
     const content = elements.editor.getValue();
-    const filename = elements.filenameInput.value || 'resume';
+    const filename = elements.filenameInput.value || 'document';
     const compiler = elements.compilerSelect.value;
 
     // Show loading
@@ -522,11 +540,13 @@ async function compileResume() {
 
         if (data.success) {
             // Show PDF preview
+            currentPdfFilename = data.pdf_filename || ((elements.filenameInput.value || 'document') + '.pdf');
             currentPdfUrl = data.pdf_url + '?t=' + Date.now();
             elements.pdfViewer.src = currentPdfUrl;
             elements.pdfViewer.classList.remove('hidden');
             elements.previewPlaceholder.style.display = 'none';
             elements.downloadBtn.disabled = false;
+            showFullPreview();
         } else {
             showError(data.error);
         }
@@ -537,15 +557,15 @@ async function compileResume() {
     }
 }
 
-// Save resume
-async function saveResume(e) {
+// Save document
+async function saveDocument(e) {
     if (e) e.preventDefault();
 
     const content = elements.editor.getValue();
-    const filename = elements.filenameInput.value || 'resume';
+    const filename = elements.filenameInput.value || 'document';
 
     try {
-        const response = await fetch(`/api/resumes/${filename}.tex`, {
+        const response = await fetch(`/api/documents/${filename}.tex`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content })
@@ -554,7 +574,7 @@ async function saveResume(e) {
         const data = await response.json();
 
         if (data.success) {
-            // Remember this as the last opened resume
+            // Remember this as the last opened document
             localStorage.setItem(STORAGE_KEYS.filename, data.filename);
             localStorage.setItem(STORAGE_KEYS.source, 'saved');
             localStorage.removeItem(STORAGE_KEYS.content);
@@ -582,9 +602,9 @@ async function saveResume(e) {
     }
 }
 
-// Load last opened resume from localStorage
-async function loadLastOpenedResume() {
-    const lastResume = localStorage.getItem(STORAGE_KEYS.filename);
+// Load last opened document from localStorage
+async function loadLastOpenedDocument() {
+    const lastDocument = localStorage.getItem(STORAGE_KEYS.filename);
     const lastContent = localStorage.getItem(STORAGE_KEYS.content);
     const lastSource = localStorage.getItem(STORAGE_KEYS.source);
     const lastPath = localStorage.getItem(STORAGE_KEYS.path);
@@ -596,7 +616,7 @@ async function loadLastOpenedResume() {
             const data = await response.json();
             if (data.content) {
                 elements.editor.setValue(data.content);
-                elements.filenameInput.value = lastResume ? lastResume.replace('.tex', '') : 'my_resume';
+                elements.filenameInput.value = lastDocument ? lastDocument.replace('.tex', '') : 'my_document';
                 return;
             }
         } catch (error) {
@@ -604,40 +624,40 @@ async function loadLastOpenedResume() {
         }
     }
 
-    if (lastSource === 'saved' && lastResume) {
+    if (lastSource === 'saved' && lastDocument) {
         try {
-            const response = await fetch(`/api/resumes/${lastResume}`);
+            const response = await fetch(`/api/documents/${lastDocument}`);
             const data = await response.json();
             if (data.content) {
                 elements.editor.setValue(data.content);
-                elements.filenameInput.value = lastResume.replace('.tex', '');
+                elements.filenameInput.value = lastDocument.replace('.tex', '');
                 return;
             }
         } catch (error) {
-            console.log('Last opened resume not found, falling back to local draft');
+            console.log('Last opened document not found, falling back to local draft');
         }
     }
 
     if (lastContent) {
         elements.editor.setValue(lastContent);
-        elements.filenameInput.value = lastResume ? lastResume.replace('.tex', '') : 'my_resume';
+        elements.filenameInput.value = lastDocument ? lastDocument.replace('.tex', '') : 'my_document';
         return;
     }
 
-    // If no saved resume or draft, use default template
+    // If no saved document or draft, use default template
     elements.editor.setValue(defaultTemplate);
-    elements.filenameInput.value = 'my_resume';
+    elements.filenameInput.value = 'my_document';
     persistDraft('draft');
 }
 
-// Create new resume with unique auto-generated filename
-async function newResume() {
-    // Generate a unique filename by checking existing saved resumes
+// Create new document with unique auto-generated filename
+async function newDocument() {
+    // Generate a unique filename by checking existing saved documents
     let newName = 'untitled_1';
     try {
-        const response = await fetch('/api/resumes');
-        const resumes = await response.json();
-        const existingNames = new Set(resumes.map(r => r.name));
+        const response = await fetch('/api/documents');
+        const documents = await response.json();
+        const existingNames = new Set(documents.map(r => r.name));
 
         let counter = 1;
         while (existingNames.has(`untitled_${counter}`)) {
@@ -655,7 +675,9 @@ async function newResume() {
     elements.pdfViewer.classList.add('hidden');
     elements.previewPlaceholder.style.display = 'flex';
     elements.downloadBtn.disabled = true;
+    elements.backToEditorBtn.hidden = true;
     currentPdfUrl = null;
+    currentPdfFilename = null;
 
     // Clear saved-file association so this is treated as a fresh draft
     localStorage.removeItem(STORAGE_KEYS.content);
@@ -673,7 +695,7 @@ function persistDraft(source = 'draft') {
         clearTimeout(persistTimer);
     }
     persistTimer = setTimeout(() => {
-        const filename = elements.filenameInput.value || 'my_resume';
+        const filename = elements.filenameInput.value || 'my_document';
         localStorage.setItem(STORAGE_KEYS.filename, `${filename}.tex`);
         localStorage.setItem(STORAGE_KEYS.content, elements.editor.getValue());
         localStorage.setItem(STORAGE_KEYS.source, source);
@@ -681,23 +703,22 @@ function persistDraft(source = 'draft') {
 }
 
 // Open a file in Cursor IDE (or VS Code as fallback)
-async function openInCursor(filename, type = 'resume') {
+async function openInCursor(filename, type = 'document') {
     // If opening the current file, save it to disk first so the editor sees latest content
     if (!filename) {
-        const currentFilename = elements.filenameInput.value || 'resume';
+        const currentFilename = elements.filenameInput.value || 'document';
         filename = currentFilename + '.tex';
-        type = 'resume';
+        type = 'document';
 
         // Quick-save to disk before opening
         try {
-            await fetch(`/api/resumes/${filename}`, {
+            await fetch(`/api/documents/${filename}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content: elements.editor.getValue() })
             });
-            loadResumes(); // refresh list
         } catch {
-            // Continue anyway — file might already exist on disk
+            // Continue anyway - file might already exist on disk
         }
     }
 
@@ -719,10 +740,10 @@ async function openInCursor(filename, type = 'resume') {
 
 // Download PDF
 function downloadPdf() {
-    if (currentPdfUrl) {
+    if (currentPdfFilename) {
         const link = document.createElement('a');
-        link.href = currentPdfUrl;
-        link.download = elements.filenameInput.value + '.pdf';
+        link.href = `/api/pdf-download/${encodeURIComponent(currentPdfFilename)}`;
+        link.download = currentPdfFilename;
         link.click();
     }
 }
@@ -741,12 +762,14 @@ function toggleEditor() {
         elements.mainContent.classList.remove('editor-hidden');
         elements.toggleEditorBtn.classList.add('active');
         elements.toggleEditorBtn.title = "Minimize Editor Entirely";
+        elements.backToEditorBtn.hidden = true;
         // Refresh CodeMirror to fix layout issues when appearing
         setTimeout(() => elements.editor.refresh(), 100);
     } else {
         elements.mainContent.classList.add('editor-hidden');
         elements.toggleEditorBtn.classList.remove('active');
         elements.toggleEditorBtn.title = "Restore Editor Panel";
+        elements.backToEditorBtn.hidden = !currentPdfUrl;
     }
 }
 
@@ -798,17 +821,20 @@ function init() {
     initEditor();
     checkLatexStatus();
     loadTemplates();
-    loadCoverLetters();
+    loadSavedDocuments();
+    setupDropdownButtons();
+    loadAllTexFiles();
     setupResizeHandle();
 
     // Event listeners
-    elements.compileBtn.addEventListener('click', compileResume);
-    elements.saveBtn.addEventListener('click', saveResume);
-    elements.newBtn.addEventListener('click', newResume);
+    elements.compileBtn.addEventListener('click', compileDocument);
+    elements.saveBtn.addEventListener('click', saveDocument);
+    elements.newBtn.addEventListener('click', newDocument);
     elements.downloadBtn.addEventListener('click', downloadPdf);
     elements.wrapBtn.addEventListener('click', toggleWordWrap);
     elements.minimizeBtn.addEventListener('click', toggleEditor);
     elements.toggleEditorBtn.addEventListener('click', toggleEditor);
+    elements.backToEditorBtn.addEventListener('click', showEditorPanel);
     elements.closeToast.addEventListener('click', hideError);
     elements.cursorBtn.addEventListener('click', () => openInCursor());
     elements.filenameInput.addEventListener('input', () => persistDraft());
@@ -832,3 +858,10 @@ function init() {
 
 // Start the app
 document.addEventListener('DOMContentLoaded', init);
+
+// Backward-compatible names used by Electron menu commands.
+window.compileDocument = compileDocument;
+window.saveDocument = saveDocument;
+window.newDocument = newDocument;
+
+

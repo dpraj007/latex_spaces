@@ -53,7 +53,7 @@ def test_compile_error_returns_400(monkeypatch):
         "/api/compile",
         json={
             "content": "x",
-            "filename": "resume",
+            "filename": "document",
             "compiler": "pdflatex",
         },
     )

@@ -1,5 +1,5 @@
 /**
- * LaTeX Resume Editor - Preload Script
+ * LaTeX Editor - Preload Script
  *
  * Provides a secure bridge between the renderer process and Node.js APIs.
  * Uses contextBridge for safe IPC communication.
@@ -24,3 +24,4 @@ contextBridge.exposeInMainWorld('desktopApp', {
         }
     }
 });
+

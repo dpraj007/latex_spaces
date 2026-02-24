@@ -1,9 +1,9 @@
 {
-  "name": "latex-resume-editor",
+  "name": "latex-editor",
   "version": "1.0.0",
-  "description": "LaTeX Resume Editor - Desktop App for Windows ARM",
+  "description": "LaTeX Editor - Desktop App for Windows ARM",
   "main": "main.js",
-  "author": "LaTeX Resume Editor",
+  "author": "LaTeX Editor",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -20,9 +20,9 @@
     "electron-builder": "^24.9.1"
   },
   "build": {
-    "appId": "com.latexeditor.resume",
-    "productName": "LaTeX Resume Editor",
-    "copyright": "Copyright 2024 LaTeX Resume Editor",
+    "appId": "com.latexeditor.app",
+    "productName": "LaTeX Editor",
+    "copyright": "Copyright 2024 LaTeX Editor",
     "directories": {
       "output": "../dist"
     },
@@ -64,7 +64,7 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "LaTeX Resume Editor",
+      "shortcutName": "LaTeX Editor",
       "runAfterFinish": true,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
@@ -75,3 +75,4 @@
     }
   }
 }
+

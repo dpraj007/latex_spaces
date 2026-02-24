@@ -1,5 +1,5 @@
 /**
- * LaTeX Resume Editor - Electron Main Process
+ * LaTeX Editor - Electron Main Process
  *
  * Spawns the Flask backend server and opens the editor in a native window.
  * Designed for Windows ARM64 desktop deployment.
@@ -87,7 +87,7 @@ async function startBackend() {
         if (!pythonCmd) {
             dialog.showErrorBox(
                 'Python Not Found',
-                'Python 3 is required to run the LaTeX Resume Editor backend.\n\n' +
+                'Python 3 is required to run the LaTeX Editor backend.\n\n' +
                 'Please install Python 3.8+ from https://www.python.org/downloads/'
             );
             app.quit();
@@ -206,7 +206,7 @@ function createWindow() {
         height: 900,
         minWidth: 800,
         minHeight: 600,
-        title: 'LaTeX Resume Editor',
+        title: 'LaTeX Editor',
         icon: path.join(__dirname, 'assets', 'icon.png'),
         backgroundColor: '#0f0a1a',
         show: false,
@@ -237,9 +237,16 @@ function createWindow() {
 
     // Handle window close
     mainWindow.on('close', (e) => {
-        if (!isQuitting) {
+        // On macOS we keep tray-style behavior; on Windows/Linux, closing exits.
+        if (!isQuitting && process.platform === 'darwin') {
             e.preventDefault();
             mainWindow.hide();
+            return;
+        }
+
+        if (!isQuitting) {
+            isQuitting = true;
+            app.quit();
         }
     });
 
@@ -253,14 +260,14 @@ function createWindow() {
             label: 'File',
             submenu: [
                 {
-                    label: 'New Resume',
+                    label: 'New Document',
                     accelerator: 'CmdOrCtrl+N',
-                    click: () => mainWindow?.webContents.executeJavaScript('newResume()')
+                    click: () => mainWindow?.webContents.executeJavaScript('newDocument()')
                 },
                 {
                     label: 'Save',
                     accelerator: 'CmdOrCtrl+S',
-                    click: () => mainWindow?.webContents.executeJavaScript('saveResume()')
+                    click: () => mainWindow?.webContents.executeJavaScript('saveDocument()')
                 },
                 {
                     label: 'Open in Cursor',
@@ -271,7 +278,7 @@ function createWindow() {
                 {
                     label: 'Compile PDF',
                     accelerator: 'CmdOrCtrl+Enter',
-                    click: () => mainWindow?.webContents.executeJavaScript('compileResume()')
+                    click: () => mainWindow?.webContents.executeJavaScript('compileDocument()')
                 },
                 { type: 'separator' },
                 {
@@ -320,9 +327,9 @@ function createWindow() {
                     click: () => {
                         dialog.showMessageBox(mainWindow, {
                             type: 'info',
-                            title: 'About LaTeX Resume Editor',
-                            message: 'LaTeX Resume Editor v1.0.0',
-                            detail: 'A professional desktop LaTeX editor for crafting resumes and cover letters.\n\nRequires a LaTeX distribution (MiKTeX or TeX Live) for PDF compilation.'
+                            title: 'About LaTeX Editor',
+                            message: 'LaTeX Editor v1.0.0',
+                            detail: 'A desktop LaTeX editor for writing and compiling .tex documents.\n\nRequires a LaTeX distribution (MiKTeX or TeX Live) for PDF compilation.'
                         });
                     }
                 },
@@ -356,7 +363,7 @@ function createTray() {
     if (!fs.existsSync(iconPath)) return;
 
     tray = new Tray(iconPath);
-    tray.setToolTip('LaTeX Resume Editor');
+    tray.setToolTip('LaTeX Editor');
 
     const contextMenu = Menu.buildFromTemplate([
         {
@@ -385,6 +392,16 @@ function createTray() {
             mainWindow.focus();
         }
     });
+}
+
+/**
+ * Destroy tray to avoid keeping Electron alive during shutdown
+ */
+function destroyTray() {
+    if (tray) {
+        tray.destroy();
+        tray = null;
+    }
 }
 
 /**
@@ -423,7 +440,7 @@ app.whenReady().then(async () => {
         log.error(`Startup failed: ${err.message}`);
         dialog.showErrorBox(
             'Startup Error',
-            `Failed to start LaTeX Resume Editor:\n\n${err.message}\n\nPlease check the logs for details.`
+            `Failed to start LaTeX Editor:\n\n${err.message}\n\nPlease check the logs for details.`
         );
         app.quit();
     }
@@ -447,10 +464,12 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
     isQuitting = true;
+    destroyTray();
     stopBackend();
 });
 
 app.on('will-quit', () => {
+    destroyTray();
     stopBackend();
 });
 
@@ -467,3 +486,4 @@ if (!gotLock) {
         }
     });
 }
+

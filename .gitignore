@@ -46,12 +46,10 @@ build/
 node_modules/
 
 # Keep samples in repo, ignore personal working documents
-latex/resumes/*.tex
-latex/cover_letters/*.tex
-!latex/resumes/sample_resume.tex
+latex/*/*.tex
+!latex/documents/sample_document.tex
 !latex/cover_letters/sample_cover_letter.tex
 !latex/templates/*.tex
 
 # Personal root content
 cover_letter_instruction.md
-*_Resume.pdf

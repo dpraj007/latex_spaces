@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM LaTeX Resume Editor - Build Python Backend with PyInstaller
+REM LaTeX Editor - Build Python Backend with PyInstaller
 REM Creates a standalone .exe from the Flask backend
 REM ============================================================
 

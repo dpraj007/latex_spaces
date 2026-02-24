@@ -1,6 +1,6 @@
-# LaTeX Resume Editor
+# LaTeX Editor
 
-Open-source LaTeX resume editor with:
+Open-source simple LaTeX editor with:
 
 - Web app mode (Flask + static frontend)
 - Windows desktop mode (Electron + bundled Flask backend)
@@ -73,7 +73,7 @@ code/
 desktop/
 latex/
   templates/
-  resumes/
+  documents/
   cover_letters/
 scripts/
 .github/
@@ -87,8 +87,8 @@ pytest -q code/backend/tests
 ```
 - Contributor guide: `CONTRIBUTING.md`
 - Security policy: `SECURITY.md`
-- Release process: `RELEASE_CHECKLIST.md`
 
 ## License
 
 MIT. See `LICENSE`.
+

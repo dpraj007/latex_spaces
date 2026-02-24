@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM LaTeX Resume Editor - Run in Development Mode
+REM LaTeX Editor - Run in Development Mode
 REM
 REM Runs the Electron app in dev mode (uses Python directly,
 REM no need to build the backend .exe first)
@@ -9,7 +9,7 @@ REM ============================================================
 cd /d "%~dp0"
 
 echo.
-echo  LaTeX Resume Editor - Development Mode
+echo  LaTeX Editor - Development Mode
 echo  =======================================
 echo.
 
@@ -40,3 +40,4 @@ call npx electron .
 
 echo.
 echo  App closed.
+

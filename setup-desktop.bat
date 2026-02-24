@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM LaTeX Resume Editor - One-Click Desktop App Setup
+REM LaTeX Editor - One-Click Desktop App Setup
 REM
 REM This script does EVERYTHING:
 REM   1. Checks prerequisites (Python, Node.js)
@@ -17,7 +17,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo ================================================================
-echo   LaTeX Resume Editor - Desktop App Builder
+echo   LaTeX Editor - Desktop App Builder
 echo   Target: Windows ARM64
 echo ================================================================
 echo.
@@ -192,7 +192,7 @@ echo.
 echo  To install:
 echo    1. Double-click the installer .exe in the dist\ folder
 echo    2. Follow the installation wizard
-echo    3. Launch "LaTeX Resume Editor" from Start Menu or Desktop!
+echo    3. Launch "LaTeX Editor" from Start Menu or Desktop!
 echo.
 echo  PREREQUISITES for running the app:
 echo    - MiKTeX (https://miktex.org/download) for LaTeX compilation
@@ -200,3 +200,4 @@ echo.
 echo ================================================================
 echo.
 pause
+

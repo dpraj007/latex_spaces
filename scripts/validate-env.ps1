@@ -6,7 +6,7 @@ function Test-CommandExists {
 }
 
 Write-Host ""
-Write-Host "LaTeX Resume Editor - Environment Validation"
+Write-Host "LaTeX Editor - Environment Validation"
 Write-Host "--------------------------------------------"
 
 $failed = $false
@@ -58,3 +58,4 @@ if ($failed) {
 
 Write-Host ""
 Write-Host "Environment check passed."
+

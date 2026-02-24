@@ -1,5 +1,5 @@
 """
-LaTeX Document Editor - Backend Server
+LaTeX Editor - Backend Server
 A Flask application for editing and compiling LaTeX documents.
 Supports both standalone web mode and Electron desktop mode.
 """
@@ -31,13 +31,13 @@ CORS(app)
 # Configuration - LaTeX and output under root
 TEMPLATES_DIR = ROOT_DIR / 'latex' / 'templates'
 OUTPUT_DIR = ROOT_DIR / 'output'
-RESUMES_DIR = ROOT_DIR / 'latex' / 'resumes'
+DOCUMENTS_DIR = ROOT_DIR / 'latex' / 'documents'
 COVER_LETTERS_DIR = ROOT_DIR / 'latex' / 'cover_letters'
 
 # Ensure directories exist
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-RESUMES_DIR.mkdir(parents=True, exist_ok=True)
+DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
 COVER_LETTERS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Cache for expensive whole-system .tex scan used by the file browser.
@@ -103,7 +103,7 @@ def find_editor_commands():
     return candidates
 
 
-def compile_latex(latex_content, filename='resume', compiler='pdflatex'):
+def compile_latex(latex_content, filename='document', compiler='pdflatex'):
     """Compile LaTeX content to PDF using specified compiler"""
     if not shutil.which(compiler):
         return None, f"Compiler '{compiler}' not found on the system."
@@ -172,11 +172,11 @@ def health():
 
 
 @app.route('/api/compile', methods=['POST'])
-def compile_resume():
+def compile_document():
     """Compile LaTeX content and return PDF"""
     data = request.json
     latex_content = data.get('content', '')
-    filename = data.get('filename', 'resume')
+    filename = data.get('filename', 'document')
     compiler = data.get('compiler', 'pdflatex')
     
     # Sanitize filename
@@ -239,33 +239,33 @@ def get_template(filename):
     return jsonify({'error': 'Template not found'}), 404
 
 
-@app.route('/api/resumes', methods=['GET'])
-def list_resumes():
-    """List saved resumes"""
-    resumes = []
-    for f in RESUMES_DIR.glob('*.tex'):
-        resumes.append({
+@app.route('/api/documents', methods=['GET'])
+def list_documents():
+    """List saved documents"""
+    documents = []
+    for f in DOCUMENTS_DIR.glob('*.tex'):
+        documents.append({
             'name': f.stem,
             'filename': f.name,
             'modified': f.stat().st_mtime
         })
-    return jsonify(sorted(resumes, key=lambda x: x['modified'], reverse=True))
+    return jsonify(sorted(documents, key=lambda x: x['modified'], reverse=True))
 
 
-@app.route('/api/resumes/<filename>', methods=['GET'])
-def get_resume(filename):
-    """Get saved resume content"""
-    resume_path = RESUMES_DIR / filename
-    if resume_path.exists() and resume_path.suffix == '.tex':
+@app.route('/api/documents/<filename>', methods=['GET'])
+def get_document(filename):
+    """Get saved document content"""
+    document_path = DOCUMENTS_DIR / filename
+    if document_path.exists() and document_path.suffix == '.tex':
         return jsonify({
-            'content': resume_path.read_text(encoding='utf-8')
+            'content': document_path.read_text(encoding='utf-8')
         })
-    return jsonify({'error': 'Resume not found'}), 404
+    return jsonify({'error': 'Document not found'}), 404
 
 
-@app.route('/api/resumes/<filename>', methods=['POST'])
-def save_resume(filename):
-    """Save resume content"""
+@app.route('/api/documents/<filename>', methods=['POST'])
+def save_document(filename):
+    """Save document content"""
     data = request.json
     content = data.get('content', '')
     
@@ -274,9 +274,9 @@ def save_resume(filename):
         filename += '.tex'
     filename = ''.join(c for c in filename if c.isalnum() or c in '-_.') 
     
-    resume_path = RESUMES_DIR / filename
-    resume_path.write_text(content, encoding='utf-8')
-    upsert_cached_tex_file(resume_path)
+    document_path = DOCUMENTS_DIR / filename
+    document_path.write_text(content, encoding='utf-8')
+    upsert_cached_tex_file(document_path)
     
     return jsonify({'success': True, 'filename': filename})
 
@@ -328,7 +328,7 @@ def open_in_editor():
     """Open a file in Cursor IDE or VS Code"""
     data = request.json
     filename = data.get('filename', '')
-    file_type = data.get('type', 'resume')
+    file_type = data.get('type', 'document')
 
     # Resolve path based on type
     if file_type == 'template':
@@ -336,7 +336,7 @@ def open_in_editor():
     elif file_type == 'cover-letter':
         file_path = COVER_LETTERS_DIR / filename
     else:
-        file_path = RESUMES_DIR / filename
+        file_path = DOCUMENTS_DIR / filename
 
     if not file_path.exists():
         return jsonify({'success': False, 'error': f'File not found: {filename}'}), 404
@@ -489,7 +489,7 @@ def build_tex_file_index():
         queue_root('/tmp', max_depth=3)
         queue_root(home, max_depth=8)
 
-    # App workspace (covers latex/resumes, templates, cover_letters)
+    # App workspace (covers latex/documents, templates, cover_letters)
     queue_root(ROOT_DIR, max_depth=8)
 
     # Current working directory if outside the above
@@ -606,7 +606,7 @@ def get_tex_file():
 
 def graceful_shutdown(signum=None, frame=None):
     """Handle graceful shutdown for desktop mode"""
-    print("\nShutting down LaTeX Document Editor...")
+    print("\nShutting down LaTeX Editor...")
     sys.exit(0)
 
 
@@ -622,7 +622,7 @@ if __name__ == '__main__':
     debug = not ELECTRON_MODE
 
     print("\n" + "="*60)
-    print("LaTeX Document Editor")
+    print("LaTeX Editor")
     if ELECTRON_MODE:
         print("  (Desktop Mode)")
     print("="*60)
@@ -641,3 +641,4 @@ if __name__ == '__main__':
     print("="*60 + "\n")
 
     app.run(debug=debug, host=host, port=port, use_reloader=False)
+

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LaTeX Resume Editor</title>
+    <title>LaTeX Editor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -30,7 +30,7 @@
                         </linearGradient>
                     </defs>
                 </svg>
-                <h1>LaTeX Resume Editor</h1>
+                <h1>LaTeX Editor</h1>
             </div>
             <div class="header-actions">
                 <div class="status-indicator" id="latexStatus">
@@ -43,7 +43,7 @@
         <!-- Toolbar -->
         <div class="toolbar">
             <div class="toolbar-group">
-                <button class="btn btn-icon" id="newBtn" title="New Resume">
+                <button class="btn btn-icon" id="newBtn" title="New Document">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <polyline points="14,2 14,8 20,8" />
@@ -69,7 +69,7 @@
                     <div class="dropdown-content" id="templateDropdown"></div>
                 </div>
                 <div class="dropdown">
-                    <button class="btn btn-icon" id="coverLetterBtn" title="Cover Letters">
+                    <button class="btn btn-icon" id="coverLetterBtn" title="Saved Documents">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
@@ -87,7 +87,7 @@
             </div>
 
             <div class="toolbar-group">
-                <input type="text" class="filename-input" id="filenameInput" value="my_resume" placeholder="filename">
+                <input type="text" class="filename-input" id="filenameInput" value="my_document" placeholder="filename">
                 <span class="filename-ext">.tex</span>
                 <select class="compiler-select" id="compilerSelect">
                     <option value="pdflatex">pdflatex</option>
@@ -166,6 +166,7 @@
                         PDF Preview
                     </span>
                     <div class="panel-actions">
+                        <button class="btn-mini" id="backToEditorBtn" title="Back to Editor" hidden>Back to Editor</button>
                         <button class="btn-mini" id="downloadBtn" title="Download PDF" disabled>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
@@ -255,3 +256,4 @@
 </body>
 
 </html>
+
