@@ -1,0 +1,33 @@
+name: Build/install help
+description: Report setup, dependency, or build failures
+title: "[Build] "
+labels: ["build", "support"]
+body:
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: "Windows 11 x64 / Windows 11 ARM64 / macOS / Linux"
+    validations:
+      required: true
+  - type: input
+    id: mode
+    attributes:
+      label: Mode
+      placeholder: "Web app / Desktop app"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or script used
+      description: Paste exact command(s) or script file used.
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error output
+      description: Paste full error text.
+    validations:
+      required: true
